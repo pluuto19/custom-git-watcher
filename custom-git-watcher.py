@@ -1,5 +1,6 @@
 import threading
 import time
+import requests
 
 from flask import Flask, request, jsonify
 from aw_client import ActivityWatchClient
@@ -9,6 +10,8 @@ app = Flask(__name__)
 aw_client = ActivityWatchClient("custom-git-watcher")
 bucket_id = "git-commits-bucket"
 aw_client.create_bucket(bucket_id, event_type="git-commit")
+
+bucket_lock = threading.Lock()
 
 @app.route('/git-commit', methods=['POST'])
 def receive_git_commit():
@@ -30,7 +33,8 @@ def receive_git_commit():
         "default_data": default_data
     }
 
-    aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
+    with bucket_lock:
+        aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
 
     return jsonify({"status": "success"}), 200
 
@@ -44,8 +48,29 @@ def query_default_watchers():
                 default_watcher_data[b_id] = events[0].data
     return default_watcher_data
 
+
+def sync_to_external_server():
+    print("Syncing to external server...")
+    with bucket_lock:
+        events = aw_client.get_events(bucket_id)
+        if events:
+            data_to_send = [event.to_json_dict() for event in events]
+            response = requests.post('', json=data_to_send)
+            if response.status_code == 200:
+                print("Data successfully sent to external server")
+                aw_client.delete_bucket(bucket_id)
+                aw_client.create_bucket(bucket_id, event_type="git-commit")
+            else:
+                print(f"Failed to send data to external server. Status code: {response.status_code}")
+        else:
+            print("No data to sync")
+
 server_thread = threading.Thread(target=app.run(port=5000))
+sync_thread = threading.Thread(target=sync_to_external_server())
 server_thread.start()
+sync_thread.start()
+
 while True:
-    print("server running...")
+    print("watcher running...")
+    # aw_client.heartbeat(bucket_id, Event(timestamp= f"{time.time()}", data={"status":"alive"}), pulsetime=5)
     time.sleep(3)
