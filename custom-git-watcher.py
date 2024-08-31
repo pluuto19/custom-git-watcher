@@ -32,7 +32,9 @@ def receive_git_commit():
         },
         "default_data": default_data
     }
-
+    f = open("C:\\Users\\Asher Siddique\\Desktop\\opt.txt", mode="a")
+    f.write(f"{commit_data}")
+    f.close()
     with bucket_lock:
         aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
 
@@ -69,7 +71,10 @@ def run_sync():
         time.sleep(5)
         sync_to_external_server()
 
-server_thread = threading.Thread(target=app.run, args=(5000,))
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+server_thread = threading.Thread(target=run_flask)
 sync_thread = threading.Thread(target=run_sync)
 server_thread.start()
 sync_thread.start()
