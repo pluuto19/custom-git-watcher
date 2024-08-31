@@ -48,7 +48,6 @@ def query_default_watchers():
                 default_watcher_data[b_id] = events[0].data
     return default_watcher_data
 
-
 def sync_to_external_server():
     print("Syncing to external server...")
     with bucket_lock:
@@ -65,8 +64,13 @@ def sync_to_external_server():
         else:
             print("No data to sync")
 
-server_thread = threading.Thread(target=app.run(port=5000))
-sync_thread = threading.Thread(target=sync_to_external_server())
+def run_sync():
+    while True:
+        time.sleep(5)
+        sync_to_external_server()
+
+server_thread = threading.Thread(target=app.run, args=(5000,))
+sync_thread = threading.Thread(target=run_sync)
 server_thread.start()
 sync_thread.start()
 
