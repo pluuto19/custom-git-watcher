@@ -1,4 +1,5 @@
 import json
+import os.path
 import threading
 import time
 import traceback
@@ -45,21 +46,21 @@ def receive_git_commit():
             "default_data": default_data
         }
 
-        with open("C:\\Users\\Asher Siddique\\Desktop\\opt.txt", mode="a") as f:
-            f.write(f"Received commit: {commit_data}\n")
+        # with open("C:\\Users\\Asher Siddique\\Desktop\\opt.txt", mode="a") as f:
+        #     f.write(f"Received commit: {commit_data}\n")
 
-        # Uncomment these lines when you're ready to use ActivityWatch again
-        # with bucket_lock:
-        #     aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
+        with bucket_lock:
+            aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
 
         return jsonify({"status": "success"}), 200
 
     except Exception as e:
         error_message = f"Error processing request: {str(e)}\n{traceback.format_exc()}"
         print(error_message)
-        with open("C:\\Users\\Asher Siddique\\Desktop\\error.txt", mode="a") as f:
+        os.mkdir(os.path.expanduser("~/.custom-watcher-error-logs"))
+        with open(os.path.expanduser("~/.custom-watcher-error-logs"), mode="a") as f:
             f.write(f"Error: {error_message}\n")
-        return jsonify({"status": "error", "message": "Internal LMAO server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 def query_default_watchers():
     buckets = aw_client.get_buckets()
