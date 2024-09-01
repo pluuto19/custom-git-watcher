@@ -1,9 +1,8 @@
-import json
-import os.path
+import datetime
+import os
 import threading
 import time
 import traceback
-
 import requests
 
 from flask import Flask, request, jsonify
@@ -17,18 +16,18 @@ aw_client.create_bucket(bucket_id, event_type="git-commit")
 
 bucket_lock = threading.Lock()
 
+def save_err_log(message, line_number):
+    print("called")
+    if not os.path.exists("~/.custom-watcher-error-logs"):
+        os.mkdir("~/.custom-watcher-error-logs")
+
+    with open(os.path.join("~/.custom-watcher-error-logs", "custom-watcher-logs.txt"), mode="a") as f:
+        f.write(f"{message}[custom-git-watcher.py | {line_number}]\n")
+
 @app.route('/git-commit', methods=['POST'])
 def receive_git_commit():
     try:
         data = request.json
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON data received"}), 400
-
-        required_fields = ['commit_hash', 'commit_message', 'author', 'timestamp']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"status": "error", "message": f"Missing required field: {field}"}), 400
-
         commit_hash = data['commit_hash']
         commit_message = data['commit_message']
         author = data['author']
@@ -46,20 +45,15 @@ def receive_git_commit():
             "default_data": default_data
         }
 
-        # with open("C:\\Users\\Asher Siddique\\Desktop\\opt.txt", mode="a") as f:
-        #     f.write(f"Received commit: {commit_data}\n")
-
         with bucket_lock:
-            aw_client.insert_event(bucket_id, Event(timestamp=f"{time.time()}", duration=0, data=commit_data))
+            iso_timestamp = datetime.datetime.fromtimestamp(float(timestamp), tz=datetime.timezone.utc).isoformat()
+            aw_client.insert_event(bucket_id, Event(timestamp=iso_timestamp, duration=0, data=commit_data))
 
         return jsonify({"status": "success"}), 200
 
     except Exception as e:
         error_message = f"Error processing request: {str(e)}\n{traceback.format_exc()}"
-        print(error_message)
-        os.mkdir(os.path.expanduser("~/.custom-watcher-error-logs"))
-        with open(os.path.expanduser("~/.custom-watcher-error-logs"), mode="a") as f:
-            f.write(f"Error: {error_message}\n")
+        save_err_log(error_message, 55)
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 def query_default_watchers():
@@ -77,21 +71,29 @@ def sync_to_external_server():
         events = aw_client.get_events(bucket_id)
         if events:
             data_to_send = [event.to_json_dict() for event in events]
-            response = requests.post('', json=data_to_send)
-            if response.status_code == 200:
-                print("Data successfully sent to external server")
-                aw_client.delete_bucket(bucket_id)
-                aw_client.create_bucket(bucket_id, event_type="git-commit")
-            else:
-                print(f"Failed to send data to external server. Status code: {response.status_code}")
+            event_ids = [event['id'] for event  in events]
+            try:
+                response = requests.post('http://localhost:10000/receive-git-data', json=data_to_send)
+                if response.status_code == 200:
+                    try:
+                        for event_id in event_ids:
+                            aw_client.delete_event(bucket_id, event_id)
+                    except Exception as e:
+                        save_err_log(str(e), 81)
+                else:
+                    save_err_log(f"Failed to send data to external server. Status code: {response.status_code}", 83)
+            except requests.exceptions.RequestException as e:
+                save_err_log(str(e), 85)
 
 def run_sync():
     while True:
-        time.sleep(5)
+        time.sleep(2)
         sync_to_external_server()
 
 def run_flask():
+    aw_client.connect()
     app.run(host='0.0.0.0', port=5000)
+    aw_client.disconnect()
 
 server_thread = threading.Thread(target=run_flask)
 sync_thread = threading.Thread(target=run_sync)
@@ -99,5 +101,4 @@ server_thread.start()
 sync_thread.start()
 
 while True:
-    # aw_client.heartbeat(bucket_id, Event(timestamp= f"{time.time()}", data={"status":"alive"}), pulsetime=5)
     time.sleep(3)
