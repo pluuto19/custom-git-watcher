@@ -87,7 +87,7 @@ def sync_to_external_server():
 
 def run_sync():
     while True:
-        time.sleep(2)
+        time.sleep(1800)
         sync_to_external_server()
 
 def run_flask():
